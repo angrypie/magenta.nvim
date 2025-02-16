@@ -15,7 +15,7 @@ M.testSetup = function()
     "n",
     "<leader>m",
     ":Magenta toggle<CR>",
-    {silent = true, noremap = true, desc = "Toggle Magenta window"}
+    { silent = true, noremap = true, desc = "Toggle Magenta window" }
   )
 end
 
@@ -29,19 +29,19 @@ M.start = function(silent)
 
   local env = {
     IS_DEV = false,
-    LOG_LEVEL = "info"
+    LOG_LEVEL = "info",
   }
 
-  local job_id =
-    vim.fn.jobstart(
-    "npm run start -s",
+  local job_id = vim.fn.jobstart(
+    -- "npm run start -s",
+    "bun run node/index.ts",
     {
       cwd = plugin_root,
       stdin = "null",
       on_exit = Utils.log_exit(env.LOG_LEVEL),
       on_stdout = Utils.log_job(env.LOG_LEVEL, false),
       on_stderr = Utils.log_job(env.LOG_LEVEL, true),
-      env = env
+      env = env,
     }
   )
 
@@ -58,6 +58,7 @@ local normal_commands = {
   "provider",
   "start-inline-edit",
   "toggle",
+  "edit-prediction",
 }
 
 local visual_commands = {
@@ -66,52 +67,40 @@ local visual_commands = {
 }
 
 M.bridge = function(channelId)
-  vim.api.nvim_create_user_command(
-    "Magenta",
-    function(opts)
-      vim.rpcnotify(channelId, "magentaCommand", opts.args)
+  vim.api.nvim_create_user_command("Magenta", function(opts)
+    vim.rpcnotify(channelId, "magentaCommand", opts.args)
+  end, {
+    nargs = "+",
+    range = true,
+    desc = "Execute Magenta command",
+    complete = function(ArgLead, CmdLine)
+      local commands = CmdLine:match("^'<,'>") and visual_commands or normal_commands
+
+      if ArgLead == "" then
+        return commands
+      end
+      -- Filter based on ArgLead
+      return vim.tbl_filter(function(cmd)
+        return cmd:find("^" .. ArgLead)
+      end, commands)
     end,
-    {
-      nargs = "+",
-      range = true,
-      desc = "Execute Magenta command",
-      complete = function(ArgLead, CmdLine)
-        local commands = CmdLine:match("^'<,'>") and visual_commands or normal_commands
+  })
 
-        if ArgLead == '' then
-          return commands
-        end
-        -- Filter based on ArgLead
-        return vim.tbl_filter(function(cmd)
-          return cmd:find('^' .. ArgLead)
-        end, commands)
-      end
-    }
-  )
-
-  vim.api.nvim_create_autocmd(
-    "WinClosed",
-    {
-      pattern = "*",
-      callback = function()
-        vim.rpcnotify(channelId, "magentaWindowClosed", {})
-      end
-    }
-  )
+  vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = "*",
+    callback = function()
+      vim.rpcnotify(channelId, "magentaWindowClosed", {})
+    end,
+  })
 
   M.listenToBufKey = function(bufnr, vimKey)
-    vim.keymap.set(
-      "n",
-      vimKey,
-      function()
-        vim.rpcnotify(channelId, "magentaKey", vimKey)
-      end,
-      {buffer = bufnr, noremap = true, silent = true}
-    )
+    vim.keymap.set("n", vimKey, function()
+      vim.rpcnotify(channelId, "magentaKey", vimKey)
+    end, { buffer = bufnr, noremap = true, silent = true })
   end
 
   M.lsp_response = function(requestId, response)
-    vim.rpcnotify(channelId, "magentaLspResponse", {requestId, response})
+    vim.rpcnotify(channelId, "magentaLspResponse", { requestId, response })
   end
 
   local opts = Options.options
@@ -120,7 +109,7 @@ M.bridge = function(channelId)
     anthropic = opts.anthropic,
     openai = opts.openai,
     bedrock = opts.bedrock,
-    sidebar_position = opts.sidebar_position
+    sidebar_position = opts.sidebar_position,
   }
 end
 
@@ -128,18 +117,15 @@ M.wait_for_lsp_attach = function(bufnr, capability, timeout_ms)
   -- Default timeout of 1000ms if not specified
   timeout_ms = timeout_ms or 1000
 
-  return vim.wait(
-    timeout_ms,
-    function()
-      local clients = vim.lsp.get_active_clients({bufnr = bufnr})
-      for _, client in ipairs(clients) do
-        if client.server_capabilities[capability] then
-          return true
-        end
+  return vim.wait(timeout_ms, function()
+    local clients = vim.lsp.get_active_clients({ bufnr = bufnr })
+    for _, client in ipairs(clients) do
+      if client.server_capabilities[capability] then
+        return true
       end
-      return false
     end
-  )
+    return false
+  end)
 end
 
 M.lsp_hover_request = function(requestId, bufnr, row, col)
@@ -149,22 +135,17 @@ M.lsp_hover_request = function(requestId, bufnr, row, col)
     return
   end
 
-  vim.lsp.buf_request_all(
-    bufnr,
-    "textDocument/hover",
-    {
-      textDocument = {
-        uri = vim.uri_from_bufnr(bufnr)
-      },
-      position = {
-        line = row,
-        character = col
-      }
+  vim.lsp.buf_request_all(bufnr, "textDocument/hover", {
+    textDocument = {
+      uri = vim.uri_from_bufnr(bufnr),
     },
-    function(responses)
-      M.lsp_response(requestId, responses)
-    end
-  )
+    position = {
+      line = row,
+      character = col,
+    },
+  }, function(responses)
+    M.lsp_response(requestId, responses)
+  end)
 end
 
 M.lsp_references_request = function(requestId, bufnr, row, col)
@@ -174,25 +155,20 @@ M.lsp_references_request = function(requestId, bufnr, row, col)
     return
   end
 
-  vim.lsp.buf_request_all(
-    bufnr,
-    "textDocument/references",
-    {
-      textDocument = {
-        uri = vim.uri_from_bufnr(bufnr)
-      },
-      position = {
-        line = row,
-        character = col
-      },
-      context = {
-        includeDeclaration = true
-      }
+  vim.lsp.buf_request_all(bufnr, "textDocument/references", {
+    textDocument = {
+      uri = vim.uri_from_bufnr(bufnr),
     },
-    function(responses)
-      M.lsp_response(requestId, responses)
-    end
-  )
+    position = {
+      line = row,
+      character = col,
+    },
+    context = {
+      includeDeclaration = true,
+    },
+  }, function(responses)
+    M.lsp_response(requestId, responses)
+  end)
 end
 
 return M

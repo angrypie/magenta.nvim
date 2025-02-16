@@ -4,20 +4,18 @@ local Options = require("magenta.options")
 
 local fzf_files = function()
   local fzf = require("fzf-lua")
-  fzf.files(
-    {
-      raw = true, -- return just the raw path strings
-      actions = {
-        ["default"] = function(selected)
-          local escaped_files = {}
-          for _, entry in ipairs(selected) do
-            table.insert(escaped_files, vim.fn.shellescape(fzf.path.entry_to_file(entry).path))
-          end
-          vim.cmd("Magenta context-files " .. table.concat(escaped_files, " "))
+  fzf.files({
+    raw = true, -- return just the raw path strings
+    actions = {
+      ["default"] = function(selected)
+        local escaped_files = {}
+        for _, entry in ipairs(selected) do
+          table.insert(escaped_files, vim.fn.shellescape(fzf.path.entry_to_file(entry).path))
         end
-      }
-    }
-  )
+        vim.cmd("Magenta context-files " .. table.concat(escaped_files, " "))
+      end,
+    },
+  })
 end
 
 local telescope_files = function()
@@ -47,7 +45,6 @@ local telescope_files = function()
   })
 end
 
-
 M.pick_context_files = function()
   if Options.options.picker == "fzf-lua" then
     fzf_files()
@@ -60,14 +57,14 @@ end
 
 M.pick_provider = function()
   local items = {
-    'openai gpt-4o',
-    'openai o1',
-    'openai o1-mini',
-    'anthropic claude-3-5-sonnet-latest'
+    "openai gpt-4o",
+    "openai o1",
+    "openai o1-mini",
+    "anthropic claude-3-5-sonnet-latest",
   }
-  vim.ui.select(items, { prompt = "Select Model", }, function (choice)
+  vim.ui.select(items, { prompt = "Select Model" }, function(choice)
     if choice ~= nil then
-      vim.cmd("Magenta provider " .. choice )
+      vim.cmd("Magenta provider " .. choice)
     end
   end)
 end
@@ -77,4 +74,7 @@ M.add_buffer_to_context = function()
   vim.cmd("Magenta context-files " .. vim.fn.shellescape(current_file))
 end
 
+M.edit_prediction = function()
+  vim.cmd("Magenta edit-prediction")
+end
 return M

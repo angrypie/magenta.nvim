@@ -22,6 +22,7 @@ import {
   type MagentaOptions,
 } from "./options.ts";
 import { InlineEditManager } from "./inline-edit/inline-edit-manager.ts";
+import { startPredictions } from "./predictions.ts";
 
 // these constants should match lua/magenta/init.lua
 const MAGENTA_COMMAND = "magentaCommand";
@@ -192,6 +193,13 @@ export class Magenta {
         const provider = getProvider(this.nvim, this.providerSetting);
         provider.abort();
 
+        break;
+      }
+
+      case "edit-prediction": {
+        startPredictions(this.nvim).catch((err) => {
+          this.nvim.logger?.error(err);
+        });
         break;
       }
 
