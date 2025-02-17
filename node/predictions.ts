@@ -17,6 +17,8 @@ if (!key) {
 }
 //TOOD we need filetype fo this
 const systemMessage = `predict what user whant to cahnge. do not explain final answer. you are code completion assistant.`;
+// const systemMessage = `complete users code. fix errors. do not explain final answer. you are code completion assistant.`;
+// const systemMessage = `complete unfinished code. do not explain final answer. you are code completion assistant.`;
 
 // const deleteCursor = (str: string) => str.replace(/<\|user_cursor_is_here\|>/g, "");
 const user_cusor_is_here = "<|user_cursor_is_here|>";
@@ -31,7 +33,7 @@ export async function startPredictions(nvim: Nvim) {
   // await new Promise((resolve) => setTimeout(resolve, 2000));
   const { row } = await win.getCursor();
 
-  const n = 20;
+  const n = 10;
   const start = Math.max(0, row - n);
   const end = row + n - (row - start - n);
 
@@ -54,7 +56,7 @@ export async function startPredictions(nvim: Nvim) {
     // model: "open-codestral-mamba",
     // model: "mistral-small-latest",
     stream: false,
-    maxTokens: 1000,
+    maxTokens: 500,
     temperature: 0,
     messages: [
       { content: systemMessage, role: "system" },
@@ -74,8 +76,9 @@ export async function startPredictions(nvim: Nvim) {
         content: "do not edit code past <|editable_region_end|>",
         role: "user",
       },
-      // {content: `file name is ${fileName}`, role: "user", },
+      { content: `file name is ${fileName}`, role: "user" },
 
+      // {content: `retun only changed lines`, role: "user", },
       { content: prompt, role: "user" },
     ],
   });
@@ -90,8 +93,11 @@ export async function startPredictions(nvim: Nvim) {
     "line",
   );
   // const text = insertLines.join("\n");
-  insertLines.pop(); //remove markdown tags which mistral always use
-  insertLines.shift(); //remove markdown tags which mistral always use
+  if (content.substring(0, 3) === "```") {
+    // hack
+    insertLines.pop(); //remove markdown tags which sometimes LLM use
+    insertLines.shift(); //remove markdown tags which sometimes LLM use
+  }
   await buffer.setLines({ start, end, lines: insertLines as Line[] });
   const endTime = performance.now();
   const elapsedTime = Math.round(endTime - startTime);
