@@ -15,7 +15,8 @@ const mistral = new Mistral({
 if (!key) {
   throw new Error("Mistral API key not found");
 }
-const systemMessage = `fix code in typescript. do not explain final answer. do not delete code.`;
+const systemMessage  = `predict what user whant to cahnge. do not explain final answer. show only code.`
+
 
 // const deleteCursor = (str: string) => str.replace(/<\|user_cursor_is_here\|>/g, "");
 const user_cusor_is_here = "<|user_cursor_is_here|>";
@@ -57,15 +58,13 @@ export async function startPredictions(nvim: Nvim) {
     // model: "mistral-small-latest",
     stream: false,
     maxTokens: 1000,
+		temperature: 0,
     messages: [
-      {
-        content: systemMessage,
-        role: "system",
-      },
-      {
-        content: prompt,
-        role: "user",
-      },
+			{ content: systemMessage, role: "system", },
+			{ content: "do not edit code before <|editable_region_start|>", role: "user", },
+			{ content: "do not edit code past <|editable_region_end|>", role: "user", },
+			{ content: prompt, role: "user", },
+
     ],
   });
   const content = result.choices?.[0].message.content as string;
@@ -137,16 +136,21 @@ function transformDiffPpart(
   removed: boolean,
 ): string {
   if (!added && !removed) return part;
-  if (added && !removed) return colorText(part, "gren");
-  if (removed && !added) return colorText(part, "red");
+  if (added && !removed) return colorText(part, "green");
+  if (removed && !added) return colorText(strikeThrough(part), 'red');
   //dont know if diff uses this
   if (removed && added) return colorText(part, "yellow");
   return kind === "line" ? part + "\n" : part;
 }
 
-function colorText(text: string, color: "gren" | "red" | "yellow") {
+function strikeThrough(text: string) {
+	return `\x1b[9m${text}\x1b[0m`;
+}
+
+
+function colorText(text: string, color: "green" | "red" | "yellow") {
   switch (color) {
-    case "gren":
+    case "green":
       return `\x1b[32m${text}\x1b[0m`;
     case "red":
       return `\x1b[31m${text}\x1b[0m`;
