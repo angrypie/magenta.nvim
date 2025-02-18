@@ -61,10 +61,21 @@ export class Magenta {
     });
 
     this.chatModel = Chat.init({ nvim, lsp });
+    const initialModel = this.chatModel.initModel();
+    __experiment_restoreMessages(initialModel, this.nvim).catch((err) => {
+      this.nvim.logger?.debug("error appending input buffer: ", err);
+    });
     this.chatApp = TEA.createApp({
       nvim: this.nvim,
-      initialModel: this.chatModel.initModel(),
+      initialModel: initialModel,
       update: (msg, model) => {
+        if (msg.type === "add-message") {
+          setTimeout(() => {
+            __experiment_persistMessages(model, this.nvim).catch((err) => {
+              this.nvim.logger?.debug("error appending input buffer: ", err);
+            });
+          }, 5000);
+        }
         if (msg.type === "prepend-input-buffer") {
           const text = msg.text;
           prependInputBufferHandler(text, this.sidebar, nvim).catch((err) => {
@@ -401,4 +412,45 @@ async function prependInputBufferHandler(
     row: lastLine,
     col: 0,
   } as Position1Indexed);
+}
+
+//persist model to disk, so that we can restore it later.
+async function __experiment_persistMessages(chat: Chat.Model, _: Nvim) {
+  //create dir .magenta.nvim if it doesn't exist
+  //where to store the data nad the caches for magenta?
+  //- project root requires a gitignore and harder to reuse
+  //- home dir probably better, we can store not only messages,
+  //  but also cache webpages, greate global rules/workflows/memories
+  const data = JSON.stringify({ messages: chat.messages }); //chat should be responsibe for this
+  const fs = await import("fs");
+  if (!fs.existsSync("./.magenta.nvim/messages")) {
+    fs.mkdirSync("./.magenta.nvim/messages", { recursive: true });
+  }
+  const fileName = "./.magenta.nvim/messages/last-session.json";
+
+  fs.writeFileSync(fileName, data);
+}
+
+async function __experiment_restoreMessages(chat: Chat.Model, nvim: Nvim) {
+  const fs = await import("fs");
+  const fileName = "./.magenta.nvim/messages/last-session.json";
+  if (!fs.existsSync(fileName)) {
+    nvim.logger?.info(`No messages file found at ${fileName}`);
+    return;
+  }
+
+  const file = fs.readFileSync(fileName).toString();
+
+  const data = JSON.parse(file) as { messages: Chat.Model["messages"] };
+
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    !Array.isArray(data.messages)
+  ) {
+    nvim.logger?.error(`Invalid messages file found at ${fileName}`);
+    return;
+  }
+  chat.messages = data.messages; //is it ok or we should do add-messages?
+  // chat.lastUserMessageId should be handled inside chat model or deleted maybe?
 }
