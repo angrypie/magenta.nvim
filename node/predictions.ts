@@ -68,25 +68,25 @@ export async function startPredictions(nvim: Nvim) {
       //   content: "do not edit outside <|editable_region_end|>",
       //   role: "user",
       // },
+      // {content: "do not edit code before <|editable_region_start|>", role: "user", },
+      // {content: "do not edit code past <|editable_region_end|>", role: "user", },
       {
-        content: "do not edit code before <|editable_region_start|>",
+        content:
+          "fix code only inside <|editable_region_end|> and <|editable_region_start|>",
         role: "user",
       },
-      {
-        content: "do not edit code past <|editable_region_end|>",
-        role: "user",
-      },
-      { content: `file name is ${fileName}`, role: "user" },
+      { content: `Language: ${fileName}`, role: "user" },
+      { content: prompt, role: "user" },
 
       // {content: `retun only changed lines`, role: "user", },
-      { content: prompt, role: "user" },
+      // { content: prompt, role: "user" },
     ],
   });
   const content = result.choices?.[0].message.content as string;
   if (!content) {
     return;
   }
-  const insertLines = content.split("\n");
+  const insertLines = format(content).editableRegion().getLines();
   const diffStr = getColoredDiff(
     lines.join("\n"),
     insertLines.join("\n"),
@@ -106,7 +106,11 @@ export async function startPredictions(nvim: Nvim) {
     `${diffStr}\n`,
   );
   // writeDebugPredictions(
-  //   `== Prediction in file ${fileName} (${elapsedTime}ms)`,
+  //   `== Input ${fileName} (${elapsedTime}ms)`,
+  //   `${withCursor.join("\n")}\n`,
+  // );
+  // writeDebugPredictions(
+  //   `== Actual resonse of the LLM`,
   //   `${content}\n`,
   // );
 }
@@ -232,4 +236,32 @@ function langFromFileName(path: string, nvim: Nvim) {
       nvim.logger?.error("Unknown extension for code prediction: " + extension);
       return "";
   }
+}
+
+function format(text: string) {
+  const editableRegion = () => {
+    const startIndex = text.indexOf(editable_region_start);
+    const endIndex = text.indexOf(editable_region_end);
+    const cut = text.substring(
+      startIndex === -1 ? 0 : startIndex + editable_region_start.length,
+      endIndex === -1 ? text.length : endIndex,
+    );
+    const result = cut.replace(user_cusor_is_here, "");
+
+    return format(result);
+  };
+
+  return {
+    user_cusor_is_here,
+    editable_region_start,
+    editable_region_end,
+
+    editableRegion,
+    get() {
+      return text;
+    },
+    getLines() {
+      return text.split("\n");
+    },
+  };
 }
