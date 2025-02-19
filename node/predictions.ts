@@ -1,3 +1,6 @@
+import { mistral } from "@ai-sdk/mistral";
+import { generateText } from "ai";
+//=== vercel ai sdk^
 import * as fs from "fs";
 import * as diff from "diff";
 import { Mistral } from "@mistralai/mistralai";
@@ -5,20 +8,84 @@ import { Mistral } from "@mistralai/mistralai";
 import { getCurrentBuffer, getCurrentWindow } from "./nvim/nvim";
 import type { Nvim } from "nvim-node";
 import type { Line } from "./nvim/buffer";
+// import { openai } from "@ai-sdk/openai";
+
+type Role = "user" | "assistant" | "system";
+
+type GenericMessage = {
+  role: Role;
+  content: string;
+};
+
+//using for mistral but should be adapted to any provider
+export async function mistralGenerateText(
+  messages: GenericMessage[],
+  code: GenericMessage,
+) {
+  // model: "ministral-3b-latest",
+  // model: "ministral-8b-latest",
+  // model: "mistral-small-latest",
+  const model = mistral("codestral-latest");
+  // const model = openai('gpt-4o-mini');
+
+  const { text, usage } = await generateText({
+    providerOptions: {
+      mistral: {
+        //it works for openai too (from vercel ai docs)
+        prediction: {
+          type: "content",
+          content: code,
+        },
+      },
+    },
+    model,
+    temperature: 0,
+    topP: 1,
+    maxTokens: 1000,
+    messages: [...messages, code],
+  });
+  return { content: text, usage };
+}
 
 const key = process.env["MISTRAL_API_KEY"];
 
-const mistral = new Mistral({
+const mistralApi = new Mistral({
   apiKey: key ?? "",
 });
 
 if (!key) {
   throw new Error("Mistral API key not found");
 }
-//TOOD we need filetype fo this
-const systemMessage = `predict what user whant to cahnge or fix code. do not explain final answer. you are code completion assistant. no formating.`;
+
+export async function originalMistralSDK(
+  messages: GenericMessage[],
+  code: GenericMessage,
+) {
+  const result = await mistralApi.chat.complete({
+    // stop: [editable_region_end], //TODO: need test - modify the format function
+    maxTokens: 1000,
+    temperature: 0,
+    topP: 1,
+    prediction: {
+      type: "content",
+      content: code.content,
+    },
+    model: "codestral-latest", //22b model
+    // model: "codestral-mamba-latest", //8b model
+    stream: false,
+    messages: [...messages, code],
+  });
+  const content = result.choices?.[0].message.content;
+  if (typeof content !== "string") {
+    throw new Error("LLM returned empty response");
+  }
+  const usage = result.usage;
+  return { content, usage };
+}
+
+// const systemMessage = `predict what user whant to cahnge or fix code. do not explain final answer. you are code completion assistant. no formating.`;
 // const systemMessage  = `Predict what user whant to change or fix code. Respond only with code, no explanation, no formatting.`
-// const systemMessage = `complete users code. fix errors. do not explain final answer. you are code completion assistant.`;
+const systemMessage = `complete users code. fix errors. do not explain final answer. you are code completion assistant.`;
 // const systemMessage = `complete unfinished code. do not explain final answer. you are code completion assistant.`;
 
 // const deleteCursor = (str: string) => str.replace(/<\|user_cursor_is_here\|>/g, "");
@@ -38,61 +105,52 @@ export async function startPredictions(nvim: Nvim) {
   const start = Math.max(0, row - n);
   const end = row + n - (row - start - n);
 
-  const relativeRow = row - start;
+  // const relativeRow = row - start;
   const lines = await buffer.getLines({ start, end });
   //maybe we should put all file into context but editabel region should be small?
-  const withCursor = [
-    editable_region_start,
-    ...lines.slice(0, relativeRow),
-    user_cusor_is_here,
-    ...lines.slice(relativeRow),
-    editable_region_end,
-  ];
-  const prompt = withCursor.join("\n");
+  // const withCursor = [
+  //   editable_region_start,
+  //   ...lines.slice(0, relativeRow),
+  //   user_cusor_is_here,
+  //   ...lines.slice(relativeRow),
+  //   editable_region_end,
+  // ];
+  const withoutCursor = [editable_region_start, ...lines, editable_region_end];
+  const prompt = withoutCursor.join("\n");
 
   const startTime = performance.now();
 
-  const result = await mistral.chat.complete({
-    // stop: [editable_region_end], //TODO: need test - modify the format function
-    prediction: {
-      type: "content",
-      content: prompt,
+  const messages: GenericMessage[] = [
+    { content: systemMessage, role: "system" },
+    // {
+    // content:
+    // "fix code only inside <|editable_region_end|> and <|editable_region_start|>. Return whole piece of code inside editable region.",
+    // role: "user",
+    // },
+    {
+      content: "do not edit code before <|editable_region_start|>",
+      role: "user",
     },
-    model: "codestral-latest", //22b model
-    // model: "codestral-mamba-latest", //8b model
-    // model: "ministral-3b-latest",
-    // model: "ministral-8b-latest",
-    // model: "mistral-small-latest",
-    stream: false,
-    maxTokens: 1000,
-    temperature: 0,
-    topP: 1,
-    messages: [
-      // { content: systemMessage, role: "system" },
-      {
-        content:
-          "fix code only inside <|editable_region_end|> and <|editable_region_start|>",
-        role: "user",
-      },
-      // { content: `Language: ${fileName}`, role: "user" },
-      // { content: prompt, role: "user" },
+    { content: "do not edit code past <|editable_region_end|>", role: "user" },
+    {
+      content:
+        "fix code only inside <|editable_region_end|> and <|editable_region_start|>",
+      role: "user",
+    },
+    { content: `Language: ${languageName}`, role: "user" },
+  ];
+  const code: GenericMessage = { content: prompt, role: "user" };
+  const result = await mistralGenerateText(messages, code);
+  // const result  = await originalMistralSDK(messages, code)
 
-      { content: systemMessage, role: "system" },
-      // {content: "do not edit code before <|editable_region_start|>", role: "user", },
-      // {content: "do not edit code past <|editable_region_end|>", role: "user", },
-      // {content: "fix code only inside <|editable_region_end|> and <|editable_region_start|>", role: "user", },
-      { content: `Language: ${languageName}`, role: "user" },
-      { content: prompt, role: "user" },
-    ],
-  });
   writeDebugPredictions(
     `== Usage while predicting in ${languageName}`,
     `${JSON.stringify(result.usage)}\n`,
   );
 
-  const content = result.choices?.[0].message.content as string;
+  const content = result.content;
   if (!content) {
-    return;
+    throw new Error("LLM returned empty response");
   }
   const insertLines = format(content).editableRegion().getLines();
   const diffStr = getColoredDiff(
@@ -110,18 +168,15 @@ export async function startPredictions(nvim: Nvim) {
   await buffer.setLines({ start, end, lines: insertLines as Line[] });
   const endTime = performance.now();
   const elapsedTime = Math.round(endTime - startTime);
+  // writeDebugPredictions(
+  //   `== Input ${languageName} (${elapsedTime}ms)`,
+  //   `${withCursor.join("\n")}\n`,
+  // );
+  writeDebugPredictions(`== Actual resonse of the LLM`, `${content}\n`);
   writeDebugPredictions(
     `== Prediction in file ${languageName} (${elapsedTime}ms)`,
     `${diffStr}\n`,
   );
-  // writeDebugPredictions(
-  //   `== Input ${fileName} (${elapsedTime}ms)`,
-  //   `${withCursor.join("\n")}\n`,
-  // );
-  // writeDebugPredictions(
-  //   `== Actual resonse of the LLM`,
-  //   `${content}\n`,
-  // );
 }
 
 //getColoredDiff returns a string with diff lines colored.
