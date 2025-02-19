@@ -16,7 +16,7 @@ if (!key) {
   throw new Error("Mistral API key not found");
 }
 //TOOD we need filetype fo this
-const systemMessage = `predict what user whant to cahnge or fix code. do not explain final answer. you are code completion assistant.`;
+const systemMessage = `predict what user whant to cahnge or fix code. do not explain final answer. you are code completion assistant. no formating.`;
 // const systemMessage  = `Predict what user whant to change or fix code. Respond only with code, no explanation, no formatting.`
 // const systemMessage = `complete users code. fix errors. do not explain final answer. you are code completion assistant.`;
 // const systemMessage = `complete unfinished code. do not explain final answer. you are code completion assistant.`;
@@ -53,6 +53,7 @@ export async function startPredictions(nvim: Nvim) {
   const startTime = performance.now();
 
   const result = await mistral.chat.complete({
+    // stop: [editable_region_end], //TODO: need test - modify the format function
     prediction: {
       type: "content",
       content: prompt,
@@ -65,6 +66,7 @@ export async function startPredictions(nvim: Nvim) {
     stream: false,
     maxTokens: 1000,
     temperature: 0,
+    topP: 1,
     messages: [
       // { content: systemMessage, role: "system" },
       {
@@ -226,8 +228,8 @@ function format(text: string) {
     //editable meta tadgs hsould have \n a the and and before
     // .._start.length + 1 - to count for \n start tag
     // endIndex-1 - to count for \n before editable end tag
-    const startIndex = text.indexOf(editable_region_start + "\n");
-    const endIndex = text.indexOf(editable_region_end + "\n");
+    const startIndex = text.indexOf(editable_region_start);
+    const endIndex = text.indexOf(editable_region_end);
     const cut = text.substring(
       startIndex === -1 ? 0 : startIndex + editable_region_start.length + 1,
       endIndex === -1 ? text.length : endIndex - 1,
