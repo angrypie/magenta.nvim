@@ -16,7 +16,8 @@ if (!key) {
   throw new Error("Mistral API key not found");
 }
 //TOOD we need filetype fo this
-const systemMessage = `predict what user whant to cahnge. do not explain final answer. you are code completion assistant.`;
+const systemMessage = `predict what user whant to cahnge or fix code. do not explain final answer. you are code completion assistant.`;
+// const systemMessage  = `Predict what user whant to change or fix code. Respond only with code, no explanation, no formatting.`
 // const systemMessage = `complete users code. fix errors. do not explain final answer. you are code completion assistant.`;
 // const systemMessage = `complete unfinished code. do not explain final answer. you are code completion assistant.`;
 
@@ -28,12 +29,12 @@ const editable_region_end = "<|editable_region_end|>";
 export async function startPredictions(nvim: Nvim) {
   const buffer = await getCurrentBuffer(nvim);
   const filePath = await buffer.getName();
-  const fileName = langFromFileName(filePath, nvim);
+  const languageName = langFromFileName(filePath, nvim);
   const win = await getCurrentWindow(nvim);
   // await new Promise((resolve) => setTimeout(resolve, 2000));
   const { row } = await win.getCursor();
 
-  const n = 10;
+  const n = 15;
   const start = Math.max(0, row - n);
   const end = row + n - (row - start - n);
 
@@ -52,36 +53,41 @@ export async function startPredictions(nvim: Nvim) {
   const startTime = performance.now();
 
   const result = await mistral.chat.complete({
-    model: "codestral-latest",
-    // model: "open-codestral-mamba",
+    prediction: {
+      type: "content",
+      content: prompt,
+    },
+    model: "codestral-latest", //22b model
+    // model: "codestral-mamba-latest", //8b model
+    // model: "ministral-3b-latest",
+    // model: "ministral-8b-latest",
     // model: "mistral-small-latest",
     stream: false,
-    maxTokens: 500,
+    maxTokens: 1000,
     temperature: 0,
     messages: [
-      { content: systemMessage, role: "system" },
-      // {
-      //   content: "put code inside <|editable_region_start|>",
-      //   role: "user",
-      // },
-      // {
-      //   content: "do not edit outside <|editable_region_end|>",
-      //   role: "user",
-      // },
-      // {content: "do not edit code before <|editable_region_start|>", role: "user", },
-      // {content: "do not edit code past <|editable_region_end|>", role: "user", },
+      // { content: systemMessage, role: "system" },
       {
         content:
           "fix code only inside <|editable_region_end|> and <|editable_region_start|>",
         role: "user",
       },
-      { content: `Language: ${fileName}`, role: "user" },
-      { content: prompt, role: "user" },
-
-      // {content: `retun only changed lines`, role: "user", },
+      // { content: `Language: ${fileName}`, role: "user" },
       // { content: prompt, role: "user" },
+
+      { content: systemMessage, role: "system" },
+      // {content: "do not edit code before <|editable_region_start|>", role: "user", },
+      // {content: "do not edit code past <|editable_region_end|>", role: "user", },
+      // {content: "fix code only inside <|editable_region_end|> and <|editable_region_start|>", role: "user", },
+      { content: `Language: ${languageName}`, role: "user" },
+      { content: prompt, role: "user" },
     ],
   });
+  writeDebugPredictions(
+    `== Usage while predicting in ${languageName}`,
+    `${JSON.stringify(result.usage)}\n`,
+  );
+
   const content = result.choices?.[0].message.content as string;
   if (!content) {
     return;
@@ -94,7 +100,8 @@ export async function startPredictions(nvim: Nvim) {
   );
   // const text = insertLines.join("\n");
   if (content.substring(0, 3) === "```") {
-    // hack
+    //TODO: it could be a part of the code, try witohut it
+    writeDebugPredictions("== Prediction:", "DEBUG: triple backticks found");
     insertLines.pop(); //remove markdown tags which sometimes LLM use
     insertLines.shift(); //remove markdown tags which sometimes LLM use
   }
@@ -102,7 +109,7 @@ export async function startPredictions(nvim: Nvim) {
   const endTime = performance.now();
   const elapsedTime = Math.round(endTime - startTime);
   writeDebugPredictions(
-    `== Prediction in file ${fileName} (${elapsedTime}ms)`,
+    `== Prediction in file ${languageName} (${elapsedTime}ms)`,
     `${diffStr}\n`,
   );
   // writeDebugPredictions(
@@ -114,30 +121,6 @@ export async function startPredictions(nvim: Nvim) {
   //   `${content}\n`,
   // );
 }
-
-// function boldTextMd(text: string) {
-// 	return `**${text}**`;
-// }
-//
-// function strikeThrough(text: string) {
-// 	return `~~${text}~~`;
-// }
-
-// function getDiffLines(prompt: string, prompt2: string): string {
-// 	const p = prompt
-// 	// const d = diff.diffLines(p, prompt2, opts);
-// 	const d = diff.diffChars(p, prompt2);
-//
-//   const result = [] as string[];
-//   for (const part of d) {
-//     const { added, removed, value } = part;
-//
-// 		// result.push(transformDiffPpart(value, 'line', added, removed));
-// 		result.push(transformDiffPpart(value, 'char', added, removed));
-//   }
-//
-// 	return  result.join("");
-// }
 
 //getColoredDiff returns a string with diff lines colored.
 //It's intended for a dispaying in terminal for debug.
@@ -240,11 +223,14 @@ function langFromFileName(path: string, nvim: Nvim) {
 
 function format(text: string) {
   const editableRegion = () => {
-    const startIndex = text.indexOf(editable_region_start);
-    const endIndex = text.indexOf(editable_region_end);
+    //editable meta tadgs hsould have \n a the and and before
+    // .._start.length + 1 - to count for \n start tag
+    // endIndex-1 - to count for \n before editable end tag
+    const startIndex = text.indexOf(editable_region_start + "\n");
+    const endIndex = text.indexOf(editable_region_end + "\n");
     const cut = text.substring(
-      startIndex === -1 ? 0 : startIndex + editable_region_start.length,
-      endIndex === -1 ? text.length : endIndex,
+      startIndex === -1 ? 0 : startIndex + editable_region_start.length + 1,
+      endIndex === -1 ? text.length : endIndex - 1,
     );
     const result = cut.replace(user_cusor_is_here, "");
 
