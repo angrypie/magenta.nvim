@@ -1,4 +1,4 @@
-import { mistral } from "@ai-sdk/mistral";
+// import { mistral } from "@ai-sdk/mistral";
 import { generateText } from "ai";
 //=== vercel ai sdk^
 import * as fs from "fs";
@@ -8,6 +8,7 @@ import { Mistral } from "@mistralai/mistralai";
 import { getCurrentBuffer, getCurrentWindow } from "./nvim/nvim";
 import type { Nvim } from "nvim-node";
 import type { Line } from "./nvim/buffer";
+import { createOpenAI } from "@ai-sdk/openai";
 // import { openai } from "@ai-sdk/openai";
 
 type Role = "user" | "assistant" | "system";
@@ -25,16 +26,22 @@ export async function mistralGenerateText(
   // model: "ministral-3b-latest",
   // model: "ministral-8b-latest",
   // model: "mistral-small-latest",
-  const model = mistral("codestral-latest");
+  const provider = createOpenAI({
+    //hack again, vercel doesnot pass providerOptions to mistral damn
+    //but mistral is compatiblee with openai
+    apiKey: process.env["MISTRAL_API_KEY"] ?? "",
+    baseURL: "https://api.mistral.ai/v1",
+  });
+  const model = provider("codestral-latest");
+  // const model = mistral("codestral-latest");
   // const model = openai('gpt-4o-mini');
 
   const { text, usage } = await generateText({
     providerOptions: {
-      mistral: {
-        //it works for openai too (from vercel ai docs)
+      openai: {
         prediction: {
           type: "content",
-          content: code,
+          content: code.content,
         },
       },
     },
@@ -94,6 +101,7 @@ const editable_region_start = "<|editable_region_start|>";
 const editable_region_end = "<|editable_region_end|>";
 
 export async function startPredictions(nvim: Nvim) {
+  writeDebugPredictions("== LLM is starting to predict", "\n");
   const buffer = await getCurrentBuffer(nvim);
   const filePath = await buffer.getName();
   const languageName = langFromFileName(filePath, nvim);
