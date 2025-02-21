@@ -34,7 +34,7 @@ export async function mistralGenerateText(
   });
   const model = provider("codestral-latest");
   // const model = mistral("codestral-latest");
-  // const model = openai('gpt-4o-mini');
+  // const model = provider("gpt-4o");
 
   const { text, usage } = await generateText({
     providerOptions: {
@@ -45,11 +45,12 @@ export async function mistralGenerateText(
         },
       },
     },
-    model,
+    model: model,
     temperature: 0,
     topP: 1,
     maxTokens: 1000,
     messages: [...messages, code],
+    stopSequences: [stop_comment],
   });
   return { content: text, usage };
 }
@@ -77,7 +78,7 @@ export async function originalMistralSDK(
       type: "content",
       content: code.content,
     },
-    model: "codestral-latest", //22b model
+    model: "codestral-latest",
     // model: "codestral-mamba-latest", //8b model
     stream: false,
     messages: [...messages, code],
@@ -92,15 +93,39 @@ export async function originalMistralSDK(
 
 // const systemMessage = `predict what user whant to cahnge or fix code. do not explain final answer. you are code completion assistant. no formating.`;
 // const systemMessage  = `Predict what user whant to change or fix code. Respond only with code, no explanation, no formatting.`
-const systemMessage = `complete users code. fix errors. do not explain final answer. you are code completion assistant.`;
+// const systemMessage = `fix errors. do not explain final answe.`;
 // const systemMessage = `complete unfinished code. do not explain final answer. you are code completion assistant.`;
 
 // const deleteCursor = (str: string) => str.replace(/<\|user_cursor_is_here\|>/g, "");
 const user_cusor_is_here = "<|user_cursor_is_here|>";
-const editable_region_start = "<|editable_region_start|>";
-const editable_region_end = "<|editable_region_end|>";
+//We are using comens because we need to ask LLM to leave them inside generated code
+//to be able to use those tags to merge our code and LLM response.
+const editable_region_start = "//<|editable_region_start|>";
+//stop_comment uesd for stop sequence, because LLMs often deletes editable region tags in response.
+//or moves them to the endf of the response, if you ask them to leave tags inside response.
+//so stop_comment is used to make sure that we are stopping at the right place.
+const stop_comment = "//im just a comment do not touch me leave me alone";
+const editable_region_end = "//<|editable_region_end|>";
+
+// const directions = `
+// You provided the code region to fix.
+// You are allowed to edit code only inside ${editable_region_start} and ${editable_region_end} tags.
+// Do not return anything else. Do not try to add code outside of the region.
+// `;
 
 export async function startPredictions(nvim: Nvim) {
+  try {
+    await _startPredictions(nvim);
+  } catch (e) {
+    writeDebugPredictions(
+      colorText(`>>>>> ERROR: ${e as Error}`, "red"),
+      colorText("==============", "red"),
+    );
+  }
+  return Promise.resolve();
+}
+
+export async function _startPredictions(nvim: Nvim) {
   writeDebugPredictions("== LLM is starting to predict", "\n");
   const buffer = await getCurrentBuffer(nvim);
   const filePath = await buffer.getName();
@@ -109,42 +134,32 @@ export async function startPredictions(nvim: Nvim) {
   // await new Promise((resolve) => setTimeout(resolve, 2000));
   const { row } = await win.getCursor();
 
-  const n = 15;
+  const n = 10;
   const start = Math.max(0, row - n);
   const end = row + n - (row - start - n);
 
   // const relativeRow = row - start;
   const lines = await buffer.getLines({ start, end });
-  //maybe we should put all file into context but editabel region should be small?
-  // const withCursor = [
-  //   editable_region_start,
-  //   ...lines.slice(0, relativeRow),
-  //   user_cusor_is_here,
-  //   ...lines.slice(relativeRow),
-  //   editable_region_end,
-  // ];
-  const withoutCursor = [editable_region_start, ...lines, editable_region_end];
+  const file = await buffer.getLines({ start: 0, end: -1 });
+  const withoutCursor = [
+    ...file.slice(0, start),
+    editable_region_start,
+    ...file.slice(start, end),
+    stop_comment,
+    editable_region_end,
+    ...file.slice(end),
+  ];
   const prompt = withoutCursor.join("\n");
 
   const startTime = performance.now();
 
   const messages: GenericMessage[] = [
-    { content: systemMessage, role: "system" },
-    // {
-    // content:
-    // "fix code only inside <|editable_region_end|> and <|editable_region_start|>. Return whole piece of code inside editable region.",
-    // role: "user",
-    // },
+    // { content: systemMessage, role: "system" },
     {
-      content: "do not edit code before <|editable_region_start|>",
+      content: `complete code inside ${editable_region_start} and ${editable_region_end}. no explanation and no formating only code. do not delete comments. complete what user trying to do.`,
       role: "user",
     },
-    { content: "do not edit code past <|editable_region_end|>", role: "user" },
-    {
-      content:
-        "fix code only inside <|editable_region_end|> and <|editable_region_start|>",
-      role: "user",
-    },
+
     { content: `Language: ${languageName}`, role: "user" },
   ];
   const code: GenericMessage = { content: prompt, role: "user" };
@@ -168,19 +183,24 @@ export async function startPredictions(nvim: Nvim) {
   );
   // const text = insertLines.join("\n");
   if (content.substring(0, 3) === "```") {
-    //TODO: it could be a part of the code, try witohut it
-    writeDebugPredictions("== Prediction:", "DEBUG: triple backticks found");
-    insertLines.pop(); //remove markdown tags which sometimes LLM use
-    insertLines.shift(); //remove markdown tags which sometimes LLM use
+    //LLM wraps code in markdown code blocks very often
+    writeDebugPredictions(
+      colorText("ERROR: triple backtick found, result may be wronge", "red"),
+      colorText("==============", "red"),
+    );
   }
+  // writeDebugPredictions(
+  //   `== Input ${languageName}`,
+  //   `${content}\n++++++++++++++++\n${insertLines.join("\n")}\n`,
+  // );
   await buffer.setLines({ start, end, lines: insertLines as Line[] });
   const endTime = performance.now();
   const elapsedTime = Math.round(endTime - startTime);
   // writeDebugPredictions(
   //   `== Input ${languageName} (${elapsedTime}ms)`,
-  //   `${withCursor.join("\n")}\n`,
+  //   `${code.content}}\n`,
   // );
-  writeDebugPredictions(`== Actual resonse of the LLM`, `${content}\n`);
+  // writeDebugPredictions(`== Actual resonse of the LLM`, `${content}\n`);
   writeDebugPredictions(
     `== Prediction in file ${languageName} (${elapsedTime}ms)`,
     `${diffStr}\n`,
@@ -287,15 +307,21 @@ function langFromFileName(path: string, nvim: Nvim) {
 }
 
 function format(text: string) {
+  if (text.substring(0, 3) === "```") {
+    //hack
+    text = text.substring(text.indexOf("\n") + 1);
+  }
+
   const editableRegion = () => {
     //editable meta tadgs hsould have \n a the and and before
     // .._start.length + 1 - to count for \n start tag
     // endIndex-1 - to count for \n before editable end tag
-    const startIndex = text.indexOf(editable_region_start);
-    const endIndex = text.indexOf(editable_region_end);
+    const startIndex = text.indexOf(editable_region_start + "\n");
+    const endIndex = text.indexOf(editable_region_end + "\n");
     const cut = text.substring(
       startIndex === -1 ? 0 : startIndex + editable_region_start.length + 1,
-      endIndex === -1 ? text.length : endIndex - 1,
+      //-1 because we want to remove last \n from the _region_end or stop_comment
+      endIndex === -1 ? text.length - 1 : endIndex - 1,
     );
     const result = cut.replace(user_cusor_is_here, "");
 
