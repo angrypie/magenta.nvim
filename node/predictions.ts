@@ -3,12 +3,12 @@ import { generateText } from "ai";
 //=== vercel ai sdk^
 import * as fs from "fs";
 import * as diff from "diff";
-import { Mistral } from "@mistralai/mistralai";
 // import * as diff from "diff";
 import { getCurrentBuffer, getCurrentWindow } from "./nvim/nvim";
 import type { Nvim } from "nvim-node";
 import type { Line } from "./nvim/buffer";
 import { createOpenAI } from "@ai-sdk/openai";
+// import { anthropic } from "@ai-sdk/anthropic";
 // import { openai } from "@ai-sdk/openai";
 
 type Role = "user" | "assistant" | "system";
@@ -27,69 +27,35 @@ export async function mistralGenerateText(
   // model: "ministral-8b-latest",
   // model: "mistral-small-latest",
   const provider = createOpenAI({
-    //hack again, vercel doesnot pass providerOptions to mistral damn
-    //but mistral is compatiblee with openai
+    // hack again, vercel doesnot pass providerOptions to mistral damn
+    // but mistral is compatiblee with openai
     apiKey: process.env["MISTRAL_API_KEY"] ?? "",
     baseURL: "https://api.mistral.ai/v1",
   });
   const model = provider("codestral-latest");
   // const model = mistral("codestral-latest");
   // const model = provider("gpt-4o");
+  // const model = anthropic('claude-3-5-sonnet-latest');
+  // const model = anthropic('claude-3-5-haiku-latest');
 
   const { text, usage } = await generateText({
-    providerOptions: {
-      openai: {
-        prediction: {
-          type: "content",
-          content: code.content,
-        },
-      },
-    },
+    // providerOptions: {
+    //   openai: {
+    //     prediction: {
+    //       type: "content",
+    //       content: code.content,
+    //     },
+    //   },
+    // },
     model: model,
     temperature: 0,
-    topP: 1,
+    // topP: 1,
     maxTokens: 1000,
     messages: [...messages, code],
     //stop sequence allows us to stop generatino before LLM do some unpredictable things
     stopSequences: [stop_comment],
   });
   return { content: text, usage };
-}
-
-const key = process.env["MISTRAL_API_KEY"];
-
-const mistralApi = new Mistral({
-  apiKey: key ?? "",
-});
-
-if (!key) {
-  throw new Error("Mistral API key not found");
-}
-
-export async function originalMistralSDK(
-  messages: GenericMessage[],
-  code: GenericMessage,
-) {
-  const result = await mistralApi.chat.complete({
-    // stop: [editable_region_end], //TODO: need test - modify the format function
-    maxTokens: 1000,
-    temperature: 0,
-    topP: 1,
-    prediction: {
-      type: "content",
-      content: code.content,
-    },
-    model: "codestral-latest",
-    // model: "codestral-mamba-latest", //8b model
-    stream: false,
-    messages: [...messages, code],
-  });
-  const content = result.choices?.[0].message.content;
-  if (typeof content !== "string") {
-    throw new Error("LLM returned empty response");
-  }
-  const usage = result.usage;
-  return { content, usage };
 }
 
 // const systemMessage = `predict what user whant to cahnge or fix code. do not explain final answer. you are code completion assistant. no formating.`;

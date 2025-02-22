@@ -10,6 +10,7 @@
     "vitest": "^2.1.8"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^1.1.9",
     "@ai-sdk/mistral": "^1.1.12",
     "@ai-sdk/openai": "^1.1.13",
     "@anthropic-ai/bedrock-sdk": "^0.12.4",
