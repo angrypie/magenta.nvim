@@ -50,6 +50,7 @@ export async function mistralGenerateText(
     topP: 1,
     maxTokens: 1000,
     messages: [...messages, code],
+    //stop sequence allows us to stop generatino before LLM do some unpredictable things
     stopSequences: [stop_comment],
   });
   return { content: text, usage };
@@ -134,20 +135,22 @@ export async function _startPredictions(nvim: Nvim) {
   // await new Promise((resolve) => setTimeout(resolve, 2000));
   const { row } = await win.getCursor();
 
-  const n = 10;
+  const n = 20;
   const start = Math.max(0, row - n);
   const end = row + n - (row - start - n);
+  const suffixEnd = end + 5;
 
   // const relativeRow = row - start;
-  const lines = await buffer.getLines({ start, end });
   const file = await buffer.getLines({ start: 0, end: -1 });
+  const editableRegion = file.slice(start, end);
+  const suffixRegion = file.slice(end, suffixEnd);
   const withoutCursor = [
-    ...file.slice(0, start),
+    // ...file.slice(0, start),
     editable_region_start,
-    ...file.slice(start, end),
+    ...editableRegion,
     stop_comment,
     editable_region_end,
-    ...file.slice(end),
+    ...suffixRegion,
   ];
   const prompt = withoutCursor.join("\n");
 
@@ -156,7 +159,7 @@ export async function _startPredictions(nvim: Nvim) {
   const messages: GenericMessage[] = [
     // { content: systemMessage, role: "system" },
     {
-      content: `complete code inside ${editable_region_start} and ${editable_region_end}. no explanation and no formating only code. do not delete comments. complete what user trying to do.`,
+      content: `fix code inside ${editable_region_start} and ${editable_region_end}. no explanation and no formating only code. do not delete comments. complete what user doing. do not implement what is out of sight`,
       role: "user",
     },
 
@@ -177,7 +180,7 @@ export async function _startPredictions(nvim: Nvim) {
   }
   const insertLines = format(content).editableRegion().getLines();
   const diffStr = getColoredDiff(
-    lines.join("\n"),
+    editableRegion.join("\n"),
     insertLines.join("\n"),
     "line",
   );
@@ -217,7 +220,10 @@ function getColoredDiff(
   const p = prompt;
   //diff by chars gives unreadable results: Point -> Dot = PDoint
   // const d = diff.diffWords(p, prompt2);
-  const d = diff.diffWords(p, prompt2);
+  const d =
+    style === "line"
+      ? diff.diffLines(p, prompt2)
+      : diff.diffWordsWithSpace(p, prompt2);
 
   const result = [] as string[];
   for (const part of d) {
