@@ -8,6 +8,7 @@ import type {
   ProviderName,
   ProviderSetting,
 } from "./provider-types.ts";
+import { MistralProvider } from "./mistral.ts";
 
 export * from "./provider-types.ts";
 
@@ -31,6 +32,9 @@ export function getProvider(
           nvim,
           providerSetting.promptCaching,
         );
+        break;
+      case "mistral":
+        clients[providerSetting.provider] = new MistralProvider(nvim);
         break;
       default:
         assertUnreachable(providerSetting);

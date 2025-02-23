@@ -39,14 +39,14 @@ export async function mistralGenerateText(
   // const model = anthropic('claude-3-5-haiku-latest');
 
   const { text, usage } = await generateText({
-    // providerOptions: {
-    //   openai: {
-    //     prediction: {
-    //       type: "content",
-    //       content: code.content,
-    //     },
-    //   },
-    // },
+    providerOptions: {
+      openai: {
+        prediction: {
+          type: "content",
+          content: code.content,
+        },
+      },
+    },
     model: model,
     temperature: 0,
     // topP: 1,

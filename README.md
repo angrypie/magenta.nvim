@@ -90,6 +90,9 @@ require('magenta').setup({
     model = "anthropic.claude-3-5-sonnet-20241022-v2:0",
     prompt_caching = false
   },
+  mistral = {
+    model = "mistral-large-latest"
+  },
   -- open chat sidebar on left or right side
   sidebar_position = "left",
   -- can be changed to "telescope"

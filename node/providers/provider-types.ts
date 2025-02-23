@@ -4,11 +4,17 @@ import type { ReplaceSelectionToolRequest } from "../inline-edit/replace-selecti
 import * as ToolManager from "../tools/toolManager.ts";
 import type { Result } from "../utils/result";
 
-export const PROVIDER_NAMES = ["anthropic", "openai", "bedrock"] as const;
+export const PROVIDER_NAMES = [
+  "anthropic",
+  "openai",
+  "bedrock",
+  "mistral",
+] as const;
 export type ProviderSetting =
   | { provider: "anthropic"; model: string }
   | { provider: "openai"; model: string }
-  | { provider: "bedrock"; model: string; promptCaching: boolean };
+  | { provider: "bedrock"; model: string; promptCaching: boolean }
+  | { provider: "mistral"; model: string };
 export type ProviderName = ProviderSetting["provider"];
 
 export type StopReason =

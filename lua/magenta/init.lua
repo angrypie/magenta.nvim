@@ -109,6 +109,7 @@ M.bridge = function(channelId)
 		anthropic = opts.anthropic,
 		openai = opts.openai,
 		bedrock = opts.bedrock,
+		mistral = opts.mistral,
 		sidebar_position = opts.sidebar_position,
 	}
 end

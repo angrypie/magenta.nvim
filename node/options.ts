@@ -6,6 +6,7 @@ export type MagentaOptions = {
   anthropic: { model: string };
   bedrock: { model: string; promptCaching: boolean };
   sidebarPosition: "left" | "right";
+  mistral: { model: string };
 };
 
 export const DEFAULT_OPTIONS: MagentaOptions = {
@@ -20,12 +21,14 @@ export const DEFAULT_OPTIONS: MagentaOptions = {
     model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
     promptCaching: false,
   },
+  mistral: {
+    model: "mistral-large-latest",
+  },
   sidebarPosition: "left",
 };
 
 export function parseOptions(inputOptions: unknown): MagentaOptions {
   const options = JSON.parse(JSON.stringify(DEFAULT_OPTIONS)) as MagentaOptions;
-
   if (typeof inputOptions == "object" && inputOptions != null) {
     const inputOptionsObj = inputOptions as { [key: string]: unknown };
     const sidebarPosition = inputOptionsObj["sidebar_position"];
@@ -66,6 +69,15 @@ export function parseOptions(inputOptions: unknown): MagentaOptions {
       }
       if (typeof bedrockOptions["prompt_caching"] == "boolean") {
         options.bedrock.promptCaching = bedrockOptions.prompt_caching;
+      }
+    }
+
+    if (typeof inputOptionsObj["mistral"] == "object") {
+      const mistralOptions = inputOptionsObj["mistral"] as {
+        [key: string]: unknown;
+      };
+      if (typeof mistralOptions["model"] == "string") {
+        options.mistral.model = mistralOptions.model;
       }
     }
   }

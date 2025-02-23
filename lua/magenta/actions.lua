@@ -61,6 +61,8 @@ M.pick_provider = function()
 		"openai o1",
 		"openai o1-mini",
 		"anthropic claude-3-5-sonnet-latest",
+		"mistral mistral-large-latest",
+		"mistral codestral-latest"
 	}
 	vim.ui.select(items, { prompt = "Select Model" }, function(choice)
 		if choice ~= nil then
